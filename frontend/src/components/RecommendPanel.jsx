@@ -1,8 +1,3 @@
-// ─── RecommendPanel ───────────────────────────────────────────────────────────
-// AI Fix-It Advisor — 3 prioritised Claude-generated remediation actions.
-// Props:
-//   recommendations – Recommendation[] | null
-
 const OUTCOME_LABELS = {
   products_services:     'Products & Services',
   price_value:           'Price & Value',
@@ -11,17 +6,18 @@ const OUTCOME_LABELS = {
 }
 
 const STATUS_COLOR = {
-  GREEN: { text: 'text-emerald-400', bg: 'bg-emerald-500/15', border: 'border-emerald-500/30' },
-  AMBER: { text: 'text-yellow-400',  bg: 'bg-yellow-500/15',  border: 'border-yellow-500/30'  },
-  RED:   { text: 'text-red-400',     bg: 'bg-red-500/15',     border: 'border-red-500/30'     },
+  GREEN: '#00d4aa',
+  AMBER: '#facc15',
+  RED:   '#f87171',
 }
 
-const PRIORITY_BADGE = ['', 'bg-red-500/20 text-red-400', 'bg-orange-500/20 text-orange-400', 'bg-yellow-500/20 text-yellow-400']
+const PRIORITY_COLOR = ['', '#f87171', '#fb923c', '#facc15']
 
-function StatusPill({ status, label }) {
-  const c = STATUS_COLOR[status] ?? STATUS_COLOR.AMBER
+function StatusPill({ status }) {
+  const color = STATUS_COLOR[status] ?? '#facc15'
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase border ${c.text} ${c.bg} ${c.border}`}>
+    <span className="inline-flex items-center px-2 py-0.5 rounded-lg text-[9px] font-bold uppercase"
+          style={{ background: `${color}15`, color, border: `1px solid ${color}25` }}>
       {status}
     </span>
   )
@@ -31,43 +27,42 @@ export default function RecommendPanel({ recommendations }) {
   if (!recommendations?.length) return null
 
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
-      {/* Header */}
-      <div className="flex items-center gap-2 mb-4">
-        <h2 className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+    <div className="glass rounded-2xl p-5">
+      <div className="flex items-center gap-3 mb-4">
+        <p className="text-[9px] font-medium uppercase tracking-[0.3em] text-white/25">
           AI Fix-It Advisor
-        </h2>
-        <span className="text-[10px] text-gray-600">— Claude-generated remediation plan</span>
+        </p>
+        <span className="text-[9px] text-white/15">— Gemini-generated remediation plan</span>
       </div>
 
-      {/* Recommendation cards */}
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-2.5">
         {recommendations.map(rec => (
           <div key={rec.priority}
-            className="flex items-start gap-4 bg-gray-800/50 border border-gray-700/60 rounded-xl p-4">
+               className="flex items-start gap-4 rounded-xl p-4 transition-colors hover:bg-white/[0.025]"
+               style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
 
-            {/* Priority badge */}
-            <span className={`shrink-0 w-6 h-6 flex items-center justify-center rounded-full text-xs font-black ${PRIORITY_BADGE[rec.priority] ?? ''}`}>
+            <span className="shrink-0 w-5 h-5 flex items-center justify-center rounded-full text-[10px] font-bold mt-0.5"
+                  style={{
+                    background: `${PRIORITY_COLOR[rec.priority] || '#facc15'}18`,
+                    color: PRIORITY_COLOR[rec.priority] || '#facc15',
+                    border: `1px solid ${PRIORITY_COLOR[rec.priority] || '#facc15'}28`,
+                  }}>
               {rec.priority}
             </span>
 
-            {/* Content */}
             <div className="flex-1 min-w-0">
-              <div className="flex flex-wrap items-center gap-2 mb-1">
-                <span className="text-xs text-gray-500">
-                  {OUTCOME_LABELS[rec.outcome_affected] ?? rec.outcome_affected}
-                </span>
-              </div>
-              <p className="text-sm font-semibold text-gray-100 mb-1">{rec.action}</p>
-              <p className="text-xs text-gray-400 leading-relaxed">{rec.detail}</p>
+              <p className="text-[9px] text-white/25 mb-1 tracking-wide">
+                {OUTCOME_LABELS[rec.outcome_affected] ?? rec.outcome_affected}
+              </p>
+              <p className="text-xs font-medium text-white/80 mb-1.5">{rec.action}</p>
+              <p className="text-[10px] text-white/40 leading-relaxed">{rec.detail}</p>
             </div>
 
-            {/* Before → After status */}
-            <div className="shrink-0 flex flex-col items-center gap-1 text-center">
+            <div className="shrink-0 flex flex-col items-center gap-1">
               <StatusPill status={rec.before_status} />
-              <span className="text-gray-600 text-xs leading-none">↓</span>
+              <span className="text-white/15 text-xs">↓</span>
               <StatusPill status={rec.after_status} />
-              <span className="text-[10px] text-gray-500">+{rec.score_delta} pts</span>
+              <span className="text-[9px] text-white/25 mt-0.5">+{rec.score_delta} pts</span>
             </div>
           </div>
         ))}
