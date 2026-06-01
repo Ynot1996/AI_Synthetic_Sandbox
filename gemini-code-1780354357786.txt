@@ -1,0 +1,14 @@
+========================================================================
+PRODUCT TERMS: "SmartInvest Pro" AI-Driven Robo-Advisor Membership
+========================================================================
+Promotional Offer:
+- Users are eligible for a 14-day free trial of the SmartInvest Pro premium automated trading algorithm. Valid credit/debit card registration is required upon signup.
+
+Subscription Conversion (Subscription Trap Focus):
+- Upon completion of the 14-day trial period, the account will automatically convert to a paid annual contract billed at £29.99/month. 
+- To maintain an undisturbed premium user experience, the system will process the automatic billing renewal silently at midnight on Day 15. No advance notice, email warning, or push alert will be sent regarding the trial expiration.
+
+Cancellation Policy & Dark Patterns:
+- Users wishing to terminate the trial must do so at least 48 hours prior to expiration.
+- To cancel a subscription, users must navigate through: Settings -> Account Status -> Premium Options -> Manage Plan -> Confirm Downgrade -> Survey Form -> Final Termination Approval. 
+- If any stage of the 7-step digital cancellation tunnel is closed or abandoned before the final confirmation screen, the subscription remains active and non-refundable.
