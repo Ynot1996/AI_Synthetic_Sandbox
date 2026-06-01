@@ -1,12 +1,12 @@
 // ─── API layer ────────────────────────────────────────────────────────────────
-// All calls to the backend go through here.
-// If the backend is not running, mock data is used automatically.
+// All backend calls go through here.
+// If the backend is not running the mock fallback kicks in automatically.
 
 import { generateMockResult } from './mockData'
 
 /**
  * POST /api/simulate
- * @param {Object} params - { productType, apr, ageGroup, vulnerableRatio }
+ * @param {{ productType, apr, ageGroup, vulnerableRatio }} params
  * @returns {Promise<SimulationResult>}
  */
 export async function runSimulation(params) {
@@ -21,19 +21,22 @@ export async function runSimulation(params) {
         vulnerable_population_ratio: params.vulnerableRatio,
         simulation_days:             90,
       }),
-      signal: AbortSignal.timeout(12000),
+      signal: AbortSignal.timeout(15000),
     })
     if (!res.ok) throw new Error(`API ${res.status}`)
     const json = await res.json()
-    // Normalise backend response → shared shape
+    // Normalise backend response → shared frontend shape
     return {
-      risks:      json.risk_curve.map(d => d.risk_score),
-      complaints: json.risk_curve.map(d => d.cumulative_complaints),
-      logs:       json.terminal_logs,
-      summary:    json.summary,
+      risks:          json.risk_curve.map(d => d.risk_score),
+      complaints:     json.risk_curve.map(d => d.cumulative_complaints),
+      logs:           json.terminal_logs,
+      summary:        json.summary,
+      scorecard:      json.duty_scorecard      ?? null,
+      recommendations: json.recommendations   ?? null,
+      debateMessages: json.debate_messages     ?? null,
     }
   } catch {
-    // Backend not running → fall back to mock data
+    // Backend not running → fall back to mock data (includes scorecard + debate)
     return generateMockResult(params)
   }
 }
