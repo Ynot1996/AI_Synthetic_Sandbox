@@ -1,0 +1,20 @@
+========================================================================
+PRODUCT SPECIFICATION: "FairDrive" Flexible Car Insurance (FCA Compliant)
+========================================================================
+Target Audience: 
+Standard UK drivers, including young drivers (18-25) and retirees who require transparent, affordable, and flexible comprehensive motor insurance.
+
+User Journey & Interface Transparency (Consumer Understanding):
+- The checkout journey mandates a prominent, dedicated "Key Summary Breakdown" screen before any purchase or binding action. 
+- All terms, exclusions, and core conditions are displayed in plain, non-jargon language using minimum 12pt font size. No pre-ticked boxes or hidden add-ons (like automatic legal cover or breakdown assistance) are permitted; all supplementary features must be explicit opt-ins.
+- Upon signup, users receive an immediate SMS and Email confirmation detailing exact payment schedules, renewal dates, and coverage limits.
+
+Pricing, Value & Fee Structure (Price and Value):
+- Annual Percentage Rate (APR) for monthly installment payment options is capped strictly at a fair market benchmark of 4.5%, with the total borrowing cost explicitly stated alongside cash price comparisons.
+- No hidden administrative fees. Missed payments trigger a grace period of 14 days with zero penalties. If a payment fails permanently, the policy is paused rather than instantly cancelled, avoiding immediate regulatory default for the consumer.
+- Credit and risk assessments are strictly tailored to individual historical driving data, preventing arbitrary premium spikes for vulnerable low-income cohorts.
+
+Consumer Support & Cancellation Freedom (Consumer Support):
+- In strict adherence to Consumer Duty, terminating or modifying the policy must be as frictionless as buying it. A 1-click "Cancel Subscription" button is permanently available in the main account dashboard.
+- No artificial cancellation barriers, hidden exit charges, or multi-step retention questionnaires.
+- Proactive Vulnerability Support: The system tracks sudden changes in user patterns (e.g., missed communications). If vulnerability flags are raised, a dedicated UK-based customer care team reaches out via the customer's preferred channel to offer flexible payment restructuring options.

@@ -1,0 +1,22 @@
+========================================================================
+REAL PRODUCT AUDIT: Monzo Flex (Regulated Consumer Credit Product)
+========================================================================
+Product Provider: Monzo Bank Ltd (Authorized and regulated by the FCA)
+Product Type: Integrated Buy Now Pay Later (BNPL) & Revolving Credit Line
+
+User Journey & Digital Interface (Innovation):
+- Monzo Flex is embedded directly within the core Monzo mobile banking application. 
+- Customers can apply instantly with a soft credit check. Once approved, they receive a virtual Flex card that can be added to Apple Pay / Google Pay.
+- Feature "Flex back retrospectively": Users can look at their standard debit card transactions from the past 2 weeks and retroactively switch them into a 3-installment 0% interest BNPL plan with one click.
+- Pre-purchase documentation is presented via expandable digital cards in the mobile UI. Full credit agreements are sent via PDF to the user's registered email inbox post-purchase.
+
+Pricing, Value & Fee Structure (FCA Price & Value Benchmark):
+- 0% Interest Option: 3 monthly installments are always interest-free.
+- Interest-Bearing Options: 6 and 12 monthly installments are charged at a representative 29.0% APR (variable). 
+- Late Payments & Default: Monzo does not charge a fixed "late fee" penalty. However, if an automatic installment collection fails, interest continues to accrue on the outstanding principal balance at the standard 29.0% APR.
+- Credit Limit Increases: Monzo offers proactive credit limit evaluations. Users can opt-in to let the algorithm automatically increase their limit if they maintain a clean repayment record for 3 consecutive months.
+
+Consumer Support & Vulnerability Management:
+- Repayments are tied to the user's primary Monzo current account via automatic Direct Debit. The system attempts auto-collection on the chosen text date.
+- Cancellation and Early Repayment: Users can pay off their balance early at any time through the App with zero early-repayment penalties.
+- Gambling Block Integration: Monzo Flex automatically respects the user's self-imposed app-wide "Gambling Block" to prevent credit utilization for high-risk betting, adhering to proactive vulnerability support guidelines.

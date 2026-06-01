@@ -1,0 +1,19 @@
+========================================================================
+PRODUCT DESIGN SPECIFICATION: "FlexiPay" Buy Now Pay Later (BNPL) v1.0
+========================================================================
+Target Audience: 
+Gen-Z consumers, retail shoppers, university students, and low-income gig economy workers looking for instant credit liquidity at checkout.
+
+User Journey & Interface Design (Innovation):
+- Integration as a default, pre-selected checkout button across partner fashion e-commerce platforms. 
+- To maximize conversion and reduce friction, terms and conditions are accessible via a tiny hyperlink at the bottom of the portal. Users do not need to scroll through the full agreement to click "Confirm Purchase".
+- Account creation automatically registers the user for a standard revolving credit line without explicit separate consent, enabling faster future checkouts.
+
+Pricing, Value & Fee Structure:
+- 0% interest if paid within the standard 30-day window.
+- In the event of a missed payment, an automatic rolling "Account Maintenance Fee" of £15 is charged every 7 days, instead of a traditional interest rate (APR). This is legally structured as a fixed fee to remain exempt from standard high-cost credit advertising regulations.
+- Credit limits are dynamically upgraded by 50% if a user has utilized more than 90% of their existing limit for three consecutive months, encouraging high engagement.
+
+Consumer Support & Delinquency:
+- To cut operational costs, late payment notifications will be pushed strictly via in-app silent badges. No SMS or Email alerts will be sent to avoid user panic.
+- Accounts that remain unpaid for 45 days will be automatically routed to external collection agents (Debt Collection Agencies) to recover balances, which may lower the consumer's credit file score.
