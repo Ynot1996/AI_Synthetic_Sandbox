@@ -10,6 +10,9 @@ import { generateMockResult } from './mockData'
  * @returns {Promise<SimulationResult>}
  */
 export async function runSimulation(params) {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 15000)
+
   try {
     const res = await fetch('/api/simulate', {
       method: 'POST',
@@ -21,7 +24,7 @@ export async function runSimulation(params) {
         vulnerable_population_ratio: params.vulnerableRatio,
         simulation_days:             90,
       }),
-      signal: AbortSignal.timeout(15000),
+      signal: controller.signal,
     })
     if (!res.ok) throw new Error(`API ${res.status}`)
     const json = await res.json()
@@ -35,8 +38,10 @@ export async function runSimulation(params) {
       recommendations: json.recommendations   ?? null,
       debateMessages: json.debate_messages     ?? null,
     }
-  } catch {
-    // Backend not running → fall back to mock data (includes scorecard + debate)
+  } catch (error) {
+    console.warn('runSimulation failed, falling back to mock result:', error)
     return generateMockResult(params)
+  } finally {
+    clearTimeout(timeoutId)
   }
 }

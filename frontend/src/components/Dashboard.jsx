@@ -36,6 +36,7 @@ export default function Dashboard({ presetParams }) {
   const [termLogs,        setTermLogs]        = useState([])
   const [debateMessages,  setDebateMessages]  = useState([])
   const [isDebateMode,    setIsDebateMode]    = useState(false)
+  const [error,           setError]           = useState(null)
 
   const intervalRef  = useRef(null)
   const timeoutsRef  = useRef([])
@@ -50,43 +51,50 @@ export default function Dashboard({ presetParams }) {
     timeoutsRef.current.forEach(clearTimeout)
     timeoutsRef.current = []
 
+    setError(null)
     setIsRunning(true); setVisiblePts(0); setProgress(0)
     setSummary(null); setFullData(null); setScorecard(null)
     setRecommendations(null); setTermLogs([]); setDebateMessages([]); setIsDebateMode(false)
 
-    const data = await runSimulation(params)
-    setFullData(data)
+    try {
+      const data = await runSimulation(params)
+      setFullData(data)
 
-    let pt = 0, logIdx = 0
-    intervalRef.current = setInterval(() => {
-      pt = Math.min(pt + 2, 90)
-      setVisiblePts(pt)
-      setProgress(Math.round((pt / 90) * 100))
+      let pt = 0, logIdx = 0
+      intervalRef.current = setInterval(() => {
+        pt = Math.min(pt + 2, 90)
+        setVisiblePts(pt)
+        setProgress(Math.round((pt / 90) * 100))
 
-      while (logIdx < (data.logs?.length ?? 0) && LOG_TRIGGER_DAYS[logIdx] <= pt) {
-        setTermLogs(prev => [...prev, data.logs[logIdx++]])
-      }
+        while (logIdx < (data.logs?.length ?? 0) && LOG_TRIGGER_DAYS[logIdx] <= pt) {
+          setTermLogs(prev => [...prev, data.logs[logIdx++]])
+        }
 
-      if (pt >= 90) {
-        clearInterval(intervalRef.current)
-        setIsRunning(false)
-        setSummary(data.summary)
+        if (pt >= 90) {
+          clearInterval(intervalRef.current)
+          setIsRunning(false)
+          setSummary(data.summary)
 
-        const t1 = setTimeout(() => setScorecard(data.scorecard), 300)
-        const t2 = setTimeout(() => setRecommendations(data.recommendations), 800)
-        const t3 = setTimeout(() => {
-          if (data.debateMessages?.length) {
-            setDebateMessages([]); setIsDebateMode(true)
-            data.debateMessages.forEach((msg, idx) => {
-              const t = setTimeout(() => setDebateMessages(prev => [...prev, msg]), idx * 700)
-              timeoutsRef.current.push(t)
-            })
-          }
-        }, 1200)
+          const t1 = setTimeout(() => setScorecard(data.scorecard), 300)
+          const t2 = setTimeout(() => setRecommendations(data.recommendations), 800)
+          const t3 = setTimeout(() => {
+            if (data.debateMessages?.length) {
+              setDebateMessages([]); setIsDebateMode(true)
+              data.debateMessages.forEach((msg, idx) => {
+                const t = setTimeout(() => setDebateMessages(prev => [...prev, msg]), idx * 700)
+                timeoutsRef.current.push(t)
+              })
+            }
+          }, 1200)
 
-        timeoutsRef.current.push(t1, t2, t3)
-      }
-    }, 60)
+          timeoutsRef.current.push(t1, t2, t3)
+        }
+      }, 60)
+    } catch (err) {
+      console.error('Stage 2 simulation failed:', err)
+      setError('Simulation failed. Check browser console or backend status.')
+      setIsRunning(false)
+    }
   }, [params])
 
   const riskSlice      = fullData ? fullData.risks.slice(0, visiblePts)      : []
@@ -127,6 +135,13 @@ export default function Dashboard({ presetParams }) {
           isRunning={isRunning} progress={progress}
         />
       </div>
+
+      {error && (
+        <div className="mb-4 animate-fadeUp rounded-2xl p-4 bg-red-500/10 border border-red-500/20 text-red-100">
+          <p className="text-sm font-medium">{error}</p>
+          <p className="text-xs text-red-200/80 mt-1">Check browser console for details and confirm backend at 127.0.0.1:8000</p>
+        </div>
+      )}
 
       {scorecard && (
         <div className="mb-4 animate-fadeUp">
