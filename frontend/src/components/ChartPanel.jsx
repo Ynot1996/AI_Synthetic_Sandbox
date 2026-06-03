@@ -90,7 +90,10 @@ export default function ChartPanel({ risks, complaints, isRunning, progress }) {
         )}
       </div>
 
-      <div className="flex-1 min-h-[280px]">
+      {/* Fixed-height, positioned wrapper — REQUIRED for Chart.js responsive mode.
+          A flex-grow container that resizes with the canvas causes an infinite
+          resize→render loop that hard-freezes the main thread. */}
+      <div className="relative w-full" style={{ height: 300 }}>
         {risks.length > 0 ? (
           <Line data={data} options={OPTIONS} />
         ) : (

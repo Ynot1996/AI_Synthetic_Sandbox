@@ -29,6 +29,7 @@ from models import (
     SimulationResponse,
     SimulationSummary,
     TerminalLogEntry,
+    product_category,
 )
 
 # ─── Product-type helpers ─────────────────────────────────────────────────────
@@ -39,6 +40,7 @@ _PRODUCT_WEIGHT: dict[str, float] = {
     "credit-card":        1.0,
     "payday-loan":        2.0,
     "investment-product": 1.3,
+    "insurance":          1.4,
 }
 
 # Fair APR threshold per product type (used by Price & Value scoring)
@@ -50,6 +52,9 @@ _APR_FAIR: dict[str, float] = {
     "investment-product": 2.0,    # ongoing charge equivalent
 }
 
+# Fair ongoing charge (%) for investment products (Price & Value)
+_FAIR_FEE_PCT = 0.75
+
 # Product-type base risk penalty for Products & Services scoring
 _PRODUCT_PS_PENALTY: dict[str, int] = {
     "payday-loan":        35,
@@ -57,20 +62,68 @@ _PRODUCT_PS_PENALTY: dict[str, int] = {
     "buy-now-pay-later":  15,
     "investment-product": 10,
     "credit-card":         5,
+    "insurance":          15,
+}
+
+# Sensible defaults when a product-specific field is missing from the request.
+_DEF_CLAIMS_REJECTION = 0.12
+_DEF_EXCLUSION_RATIO  = 0.30
+_DEF_ANNUAL_FEE_PCT   = 1.0
+_DEF_RISK_RATING      = 4
+
+
+_PRODUCT_LABEL_OVERRIDE: dict[str, str] = {
+    "insurance": "insurance policy",
 }
 
 
 def _label(req: SimulationRequest) -> str:
+    if req.product_type in _PRODUCT_LABEL_OVERRIDE:
+        return _PRODUCT_LABEL_OVERRIDE[req.product_type].title()
     return req.product_type.replace("-", " ").title()
+
+
+def _cost_phrase(req: SimulationRequest) -> str:
+    """Human-readable headline cost/harm driver, used in evidence & debate text.
+
+    Credit products are framed by APR; insurance by premium + claims denial;
+    investment by ongoing charge + risk rating — so the narrative stays realistic
+    per product instead of forcing an APR onto everything."""
+    cat = product_category(req.product_type)
+    if cat == "insurance":
+        bits = []
+        if req.annual_premium:
+            bits.append(f"£{req.annual_premium:.0f}/yr premium")
+        rej = req.claims_rejection_rate if req.claims_rejection_rate is not None else _DEF_CLAIMS_REJECTION
+        bits.append(f"{rej * 100:.0f}% of claims denied")
+        return ", ".join(bits)
+    if cat == "investment":
+        fee = req.annual_fee_pct if req.annual_fee_pct is not None else _DEF_ANNUAL_FEE_PCT
+        rr  = req.risk_rating if req.risk_rating is not None else _DEF_RISK_RATING
+        return f"{fee:.2f}% annual charge at risk rating {rr}/7"
+    return f"{req.apr:.1f}% APR"
 
 
 # ─── Statistical simulation ───────────────────────────────────────────────────
 
 def _base_risk(req: SimulationRequest) -> float:
-    apr_factor  = min(req.apr / 200.0, 1.0)
-    vuln_factor = req.vulnerable_population_ratio
-    weight      = min(_PRODUCT_WEIGHT.get(req.product_type, 1.0), 2.0)
-    return min((0.6 * apr_factor + 0.4 * vuln_factor) * weight, 1.0)
+    vuln   = req.vulnerable_population_ratio
+    weight = min(_PRODUCT_WEIGHT.get(req.product_type, 1.0), 2.0)
+    cat    = product_category(req.product_type)
+
+    if cat == "insurance":
+        rej = req.claims_rejection_rate if req.claims_rejection_rate is not None else _DEF_CLAIMS_REJECTION
+        exc = req.exclusion_ratio if req.exclusion_ratio is not None else _DEF_EXCLUSION_RATIO
+        driver = 0.50 * rej + 0.30 * exc + 0.20 * vuln
+    elif cat == "investment":
+        fee_factor  = min((req.annual_fee_pct if req.annual_fee_pct is not None else _DEF_ANNUAL_FEE_PCT) / 5.0, 1.0)
+        risk_factor = ((req.risk_rating if req.risk_rating is not None else _DEF_RISK_RATING) - 1) / 6.0
+        driver = 0.45 * fee_factor + 0.35 * risk_factor + 0.20 * vuln
+    else:  # credit
+        apr_factor = min(req.apr / 200.0, 1.0)
+        driver = 0.6 * apr_factor + 0.4 * vuln
+
+    return min(driver * weight, 1.0)
 
 
 def _build_risk_curve(base: float, days: int) -> list[float]:
@@ -123,6 +176,23 @@ def _score_products_services(req: SimulationRequest, _summary: SimulationSummary
 
 
 def _score_price_value(req: SimulationRequest, _summary: SimulationSummary) -> int:
+    cat = product_category(req.product_type)
+
+    if cat == "insurance":
+        # Fair value (PRIN 2A.3) is eroded by denied claims and broad exclusions:
+        # a cheap premium is poor value if the policy rarely pays out.
+        rej = req.claims_rejection_rate if req.claims_rejection_rate is not None else _DEF_CLAIMS_REJECTION
+        exc = req.exclusion_ratio if req.exclusion_ratio is not None else _DEF_EXCLUSION_RATIO
+        return max(0, min(100, int(95 - rej * 120 - exc * 40)))
+
+    if cat == "investment":
+        fee = req.annual_fee_pct if req.annual_fee_pct is not None else _DEF_ANNUAL_FEE_PCT
+        if fee <= _FAIR_FEE_PCT:
+            return 90
+        ratio = min((fee - _FAIR_FEE_PCT) / (_FAIR_FEE_PCT * 4 + 0.01), 1.0)
+        return max(0, int(88 - ratio * 58))
+
+    # credit
     fair = _APR_FAIR.get(req.product_type, 25.0)
     apr  = req.apr
     if apr <= fair:
@@ -136,9 +206,24 @@ def _score_price_value(req: SimulationRequest, _summary: SimulationSummary) -> i
 
 def _score_consumer_understanding(req: SimulationRequest, summary: SimulationSummary) -> int:
     score = 100
-    if req.apr > 100:   score -= 30
-    elif req.apr > 50:  score -= 20
-    elif req.apr > 25:  score -= 10
+    cat   = product_category(req.product_type)
+    if cat == "insurance":
+        exc = req.exclusion_ratio if req.exclusion_ratio is not None else _DEF_EXCLUSION_RATIO
+        rej = req.claims_rejection_rate if req.claims_rejection_rate is not None else _DEF_CLAIMS_REJECTION
+        if exc > 0.50:   score -= 25
+        elif exc > 0.30: score -= 15
+        if rej > 0.20:   score -= 15   # opaque claims handling => consumers misjudge cover
+    elif cat == "investment":
+        fee = req.annual_fee_pct if req.annual_fee_pct is not None else _DEF_ANNUAL_FEE_PCT
+        rr  = req.risk_rating if req.risk_rating is not None else _DEF_RISK_RATING
+        if fee > 1.5:   score -= 20
+        elif fee > 1.0: score -= 10
+        if rr >= 6:     score -= 15    # complex / high-risk is harder to understand
+        elif rr >= 5:   score -= 8
+    else:  # credit
+        if req.apr > 100:   score -= 30
+        elif req.apr > 50:  score -= 20
+        elif req.apr > 25:  score -= 10
     age_penalty = {"18–25": 20, "18-25": 20, "26–40": 5, "26-40": 5, "41–60": 0, "41-60": 0, "60+": 12}
     score -= age_penalty.get(req.target_age_group, 0)
     score -= int(req.vulnerable_population_ratio * 25)
@@ -176,21 +261,23 @@ def _ev_products_services(req: SimulationRequest, _s: SimulationSummary, score: 
 
 
 def _ev_price_value(req: SimulationRequest, _s: SimulationSummary, score: int) -> str:
+    phrase = _cost_phrase(req)
     if score >= 70:
-        return f"{req.apr:.1f}% APR is within an acceptable fair-value range for this product type."
+        return f"Fair value holds: {phrase} sits within acceptable PRIN 2A.3 thresholds."
     if score >= 40:
-        return f"{req.apr:.1f}% APR exceeds fair-value thresholds — FCA may require justification under PRIN 2A.3."
-    return f"{req.apr:.1f}% APR constitutes poor value under PRIN 2A.3; consumers pay significantly more than market alternatives."
+        return f"{phrase} pushes against PRIN 2A.3 fair-value limits — the firm may need to justify it."
+    return f"Poor value under PRIN 2A.3: {phrase} leaves consumers materially worse off than market alternatives."
 
 
 def _ev_consumer_understanding(req: SimulationRequest, summary: SimulationSummary, score: int) -> str:
-    rate = summary.total_complaints / 1000.0
-    vpct = int(req.vulnerable_population_ratio * 100)
+    rate   = summary.total_complaints / 1000.0
+    vpct   = int(req.vulnerable_population_ratio * 100)
+    phrase = _cost_phrase(req)
     if score >= 70:
         return f"Complaint rate of {rate:.1%} is within acceptable range for the {req.target_age_group} demographic."
     if score >= 40:
-        return f"Complaint rate of {rate:.1%} and {req.apr:.1f}% APR suggest {vpct}% of users may not fully understand their obligations."
-    return f"Complaint rate of {rate:.1%} combined with {req.apr:.1f}% APR indicates widespread failure of consumer understanding under PRIN 2A.4."
+        return f"Complaint rate of {rate:.1%} alongside {phrase} suggests {vpct}% of users may not fully understand the terms."
+    return f"Complaint rate of {rate:.1%} combined with {phrase} indicates widespread failure of consumer understanding under PRIN 2A.4."
 
 
 def _ev_consumer_support(_req: SimulationRequest, summary: SimulationSummary, score: int) -> str:
@@ -256,8 +343,26 @@ _CANNED_RECS: dict[str, dict] = {
 }
 
 
+# Product-aware Price & Value fix (credit talks APR; insurance/investment do not)
+_PRICE_VALUE_RECS_BY_CAT: dict[str, dict] = {
+    "insurance": {
+        "action_tpl": "Cut claims-rejection rate and narrow policy exclusions",
+        "detail_tpl": ("Reducing denied claims and trimming overly broad exclusions restores fair value "
+                       "under PRIN 2A.3 and rebuilds consumer trust that the cover will actually pay out."),
+        "score_delta": 25,
+    },
+    "investment": {
+        "action_tpl": "Lower ongoing charge below 0.75% and re-test suitability",
+        "detail_tpl": ("Bringing the annual charge in line with fair-value benchmarks and reconfirming risk "
+                       "suitability for the target market directly addresses the PRIN 2A.3 concern."),
+        "score_delta": 25,
+    },
+}
+
+
 def _static_recommendations(req: SimulationRequest, summary: SimulationSummary,
                              scorecard: ConsumerDutyScorecard) -> list[dict]:
+    cat = product_category(req.product_type)
     sorted_outcomes = sorted(scorecard.outcomes, key=lambda o: o.score)
     recs = []
     for i, outcome in enumerate(sorted_outcomes[:3]):
@@ -266,6 +371,8 @@ def _static_recommendations(req: SimulationRequest, summary: SimulationSummary,
             "detail_tpl": "Conduct a formal Consumer Duty product assessment across all four outcome areas.",
             "score_delta": 10,
         })
+        if outcome.outcome_id == "price_value" and cat in _PRICE_VALUE_RECS_BY_CAT:
+            c = _PRICE_VALUE_RECS_BY_CAT[cat]
         target_apr = max(req.apr * 0.6, 15.0)
         action = c["action_tpl"].format(apr=req.apr, target=target_apr,
                                         peak_day=summary.peak_risk_day,
@@ -326,86 +433,106 @@ def _get_recommendations(req: SimulationRequest, summary: SimulationSummary,
 
 # ─── Multi-Agent Regulatory Debate ───────────────────────────────────────────
 
-_STATIC_DEBATE_TEMPLATE = [
-    {
-        "speaker": "FCA Examiner", "role": "regulator",
-        "day": "Opening Statement", "severity": "HIGH",
-        "color_class": "text-purple-400", "emoji": "🏛️",
-        "message_tpl": (
-            "Under Consumer Duty PS22/9, we are examining whether this {label} at {apr:.1f}% APR meets "
-            "all four outcome requirements. Our initial assessment flags serious concerns under PRIN 2A.3 "
-            "Price & Value. The firm must demonstrate how this rate provides genuine value to {age_group} customers."
-        ),
-    },
-    {
-        "speaker": "Compliance Officer", "role": "compliance",
-        "day": "Opening Response", "severity": "MEDIUM",
-        "color_class": "text-cyan-400", "emoji": "📋",
-        "message_tpl": (
-            "We acknowledge the FCA's concerns. Our product was designed for a specific market segment, "
-            "and we have conducted a fair value assessment under PRIN 2A.3. However, we recognise the "
-            "simulation data highlights areas for improvement — particularly around {age_group} consumers."
-        ),
-    },
-    {
-        "speaker": "Sarah, 32 — Single mother", "role": "consumer",
-        "day": "Day 14", "severity": "HIGH",
-        "color_class": "text-red-400", "emoji": "👤",
-        "message_tpl": (
-            "I took this {label} because I needed help with bills. But at {apr:.1f}% APR I'm paying "
-            "back nearly double. Nobody explained what it would actually cost me. I feel completely misled."
-        ),
-    },
-    {
-        "speaker": "FCA Examiner", "role": "regulator",
-        "day": "Follow-up", "severity": "HIGH",
-        "color_class": "text-purple-400", "emoji": "🏛️",
-        "message_tpl": (
-            "The testimony above illustrates a Consumer Understanding failure under PRIN 2A.4. "
-            "Your simulation shows {total_complaints} complaints in 90 days. "
-            "Can the firm explain how it met its obligations to ensure consumers could make informed decisions?"
-        ),
-    },
-    {
-        "speaker": "Jake, 23 — Recent graduate", "role": "consumer",
-        "day": "Day 36", "severity": "MEDIUM",
-        "color_class": "text-yellow-400", "emoji": "👤",
-        "message_tpl": (
-            "The app made it so easy to sign up — I didn't read the small print. "
-            "I didn't realise {apr:.1f}% APR was this expensive until I missed a payment. "
-            "There was no cooling-off period, no clear cost summary. It felt like a trap."
-        ),
-    },
-    {
-        "speaker": "Compliance Officer", "role": "compliance",
-        "day": "Closing Statement", "severity": "MEDIUM",
-        "color_class": "text-cyan-400", "emoji": "📋",
-        "message_tpl": (
-            "We take these concerns seriously. We are committing to three immediate actions: "
-            "reducing the APR for our most vulnerable customer segments, introducing a 14-day cooling-off "
-            "period, and deploying proactive support outreach before Day {peak_day}."
-        ),
-    },
-    {
-        "speaker": "Margaret, 68 — Retired pensioner", "role": "consumer",
-        "day": "Day 67", "severity": "HIGH",
-        "color_class": "text-orange-400", "emoji": "👤",
-        "message_tpl": (
-            "My adviser recommended this {label} but never mentioned the true charges. "
-            "On my fixed pension I simply cannot keep up with the repayments. "
-            "I had to choose between food and my monthly payment. This should never have been sold to me."
-        ),
-    },
-]
+# Shared regulator / compliance turns (product-agnostic — {cost} adapts per product)
+_EXAMINER_OPEN = {
+    "speaker": "FCA Examiner", "role": "regulator", "day": "Opening Statement",
+    "severity": "HIGH", "color_class": "text-purple-400", "emoji": "🏛️",
+    "message_tpl": (
+        "Under Consumer Duty PS22/9 we are examining whether this {label} ({cost}) meets all four "
+        "outcome requirements. Our initial assessment flags serious concerns under PRIN 2A.3 Price & "
+        "Value. The firm must demonstrate how this delivers genuine value to {age_group} customers."
+    ),
+}
+_COMPLIANCE_OPEN = {
+    "speaker": "Compliance Officer", "role": "compliance", "day": "Opening Response",
+    "severity": "MEDIUM", "color_class": "text-cyan-400", "emoji": "📋",
+    "message_tpl": (
+        "We acknowledge the FCA's concerns. The {label} was designed for a defined target market and "
+        "we completed a fair value assessment under PRIN 2A.3. That said, the simulation data does "
+        "highlight areas for improvement — particularly around {age_group} consumers."
+    ),
+}
+_EXAMINER_FOLLOWUP = {
+    "speaker": "FCA Examiner", "role": "regulator", "day": "Follow-up",
+    "severity": "HIGH", "color_class": "text-purple-400", "emoji": "🏛️",
+    "message_tpl": (
+        "That testimony illustrates a Consumer Understanding failure under PRIN 2A.4. Your 90-day "
+        "simulation shows {total_complaints} complaints. Can the firm explain how it met its obligation "
+        "to ensure consumers could make properly informed decisions?"
+    ),
+}
+_COMPLIANCE_CLOSE = {
+    "speaker": "Compliance Officer", "role": "compliance", "day": "Closing Statement",
+    "severity": "MEDIUM", "color_class": "text-cyan-400", "emoji": "📋",
+    "message_tpl": (
+        "We take these concerns seriously and commit to three actions: improving value for our most "
+        "vulnerable segments, rewriting key terms in plain English, and deploying proactive support "
+        "outreach before Day {peak_day}."
+    ),
+}
+
+# Per-category consumer voices (positions 3, 5, 7) — the explainable "victim" testimony
+_CONSUMER_SCRIPTS: dict[str, list[dict]] = {
+    "credit": [
+        {"speaker": "Sarah, 32 — Single mother", "day": "Day 14", "severity": "HIGH",
+         "color_class": "text-red-400", "emoji": "👤",
+         "message_tpl": ("I took this {label} because I needed help with bills. But at {cost} I'm paying "
+                         "back nearly double. Nobody explained what it would actually cost me.")},
+        {"speaker": "Jake, 23 — Recent graduate", "day": "Day 36", "severity": "MEDIUM",
+         "color_class": "text-yellow-400", "emoji": "👤",
+         "message_tpl": ("The app made it so easy to sign up — I didn't read the small print. I didn't "
+                         "realise {cost} was this expensive until I missed a payment. It felt like a trap.")},
+        {"speaker": "Margaret, 68 — Retired pensioner", "day": "Day 67", "severity": "HIGH",
+         "color_class": "text-orange-400", "emoji": "👤",
+         "message_tpl": ("My adviser recommended this {label} but never mentioned the true charges. On my "
+                         "fixed pension I simply cannot keep up with the repayments. I had to choose "
+                         "between food and my monthly payment.")},
+    ],
+    "insurance": [
+        {"speaker": "Sarah, 32 — Single mother", "day": "Day 14", "severity": "HIGH",
+         "color_class": "text-red-400", "emoji": "👤",
+         "message_tpl": ("I bought this {label} for peace of mind. When I finally claimed, it was denied on "
+                         "an exclusion buried in the small print — {cost}. Nothing paid out when I needed it most.")},
+        {"speaker": "Jake, 23 — Recent graduate", "day": "Day 36", "severity": "MEDIUM",
+         "color_class": "text-yellow-400", "emoji": "👤",
+         "message_tpl": ("I assumed I was covered. The premium looked cheap, but the exclusions list was longer "
+                         "than the cover, and nobody flagged that my situation simply wasn't included.")},
+        {"speaker": "Margaret, 68 — Retired pensioner", "day": "Day 67", "severity": "HIGH",
+         "color_class": "text-orange-400", "emoji": "👤",
+         "message_tpl": ("My claim was rejected without a clear reason. At my age, fighting an automated "
+                         "rejection on a policy I paid into for years is exhausting and deeply unfair.")},
+    ],
+    "investment": [
+        {"speaker": "Sarah, 32 — First-time investor", "day": "Day 14", "severity": "HIGH",
+         "color_class": "text-red-400", "emoji": "👤",
+         "message_tpl": ("I was told this {label} suited me. Months in, the charges quietly ate my returns — "
+                         "{cost}. The risk was far higher than I ever understood when I signed up.")},
+        {"speaker": "Jake, 23 — Recent graduate", "day": "Day 36", "severity": "MEDIUM",
+         "color_class": "text-yellow-400", "emoji": "👤",
+         "message_tpl": ("The headline returns looked great, but the ongoing charges weren't clear. I didn't "
+                         "realise how much {cost} would compound against me over time.")},
+        {"speaker": "Margaret, 68 — Retired pensioner", "day": "Day 67", "severity": "HIGH",
+         "color_class": "text-orange-400", "emoji": "👤",
+         "message_tpl": ("This {label} was sold as suitable for my retirement. It was far too risky for "
+                         "someone on a fixed income, and the charges were never explained to me plainly.")},
+    ],
+}
 
 
 def _static_debate(req: SimulationRequest, summary: SimulationSummary) -> list[dict]:
-    ctx = dict(label=_label(req), apr=req.apr, age_group=req.target_age_group,
+    cat = product_category(req.product_type)
+    ctx = dict(label=_label(req), cost=_cost_phrase(req), age_group=req.target_age_group,
                total_complaints=summary.total_complaints, peak_day=summary.peak_risk_day,
                vpct=int(req.vulnerable_population_ratio * 100))
+    consumers = _CONSUMER_SCRIPTS.get(cat, _CONSUMER_SCRIPTS["credit"])
+    ordered = [
+        _EXAMINER_OPEN, _COMPLIANCE_OPEN, consumers[0],
+        _EXAMINER_FOLLOWUP, consumers[1], _COMPLIANCE_CLOSE, consumers[2],
+    ]
     result = []
-    for tmpl in _STATIC_DEBATE_TEMPLATE:
+    for tmpl in ordered:
         entry = {k: v for k, v in tmpl.items() if k != "message_tpl"}
+        entry["role"] = entry.get("role", "consumer")
         entry["message"] = tmpl["message_tpl"].format(**ctx)
         result.append(entry)
     return result

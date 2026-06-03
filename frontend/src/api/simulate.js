@@ -19,10 +19,18 @@ export async function runSimulation(params) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         product_type:                params.productType,
-        apr:                         params.apr,
         target_age_group:            params.ageGroup,
         vulnerable_population_ratio: params.vulnerableRatio,
         simulation_days:             90,
+        // credit
+        apr:                         params.apr ?? 0,
+        // insurance
+        annual_premium:              params.annualPremium ?? null,
+        claims_rejection_rate:       params.claimsRejectionRate ?? null,
+        exclusion_ratio:             params.exclusionRatio ?? null,
+        // investment
+        annual_fee_pct:              params.annualFeePct ?? null,
+        risk_rating:                 params.riskRating ?? null,
       }),
       signal: controller.signal,
     })

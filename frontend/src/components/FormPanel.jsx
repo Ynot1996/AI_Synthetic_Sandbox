@@ -4,7 +4,7 @@ const PRODUCT_TYPES = [
   { value: 'credit-card',        label: 'Credit Card' },
   { value: 'payday-loan',        label: 'Payday Loan' },
   { value: 'investment-product', label: 'Investment Product' },
-  { value: 'insurance',          label: 'Insurance Product' },
+  { value: 'insurance',          label: 'Insurance Policy' },
 ]
 
 const AGE_GROUPS = ['18–25', '26–40', '41–60', '60+']
@@ -16,8 +16,46 @@ const VERDICT = {
   CRITICAL:    { color: '#f87171', label: 'CRITICAL' },
 }
 
+// Per-product-category sensible defaults, seeded on product switch
+export const CATEGORY_DEFAULTS = {
+  credit:     { apr: 39.9 },
+  insurance:  { annualPremium: 600, claimsRejectionRate: 0.18, exclusionRatio: 0.40 },
+  investment: { annualFeePct: 1.5, riskRating: 5 },
+}
+
+export function categoryOf(productType) {
+  if (productType === 'insurance') return 'insurance'
+  if (productType === 'investment-product') return 'investment'
+  return 'credit'
+}
+
+function seedDefaults(cat, prev) {
+  const d = CATEGORY_DEFAULTS[cat] || {}
+  const out = {}
+  for (const k in d) if (prev[k] == null) out[k] = d[k]
+  return out
+}
+
+// ── Reusable range row ─────────────────────────────────────────────────────────
+function Slider({ label, value, display, min, max, step, color, onChange }) {
+  return (
+    <div>
+      <div className="flex justify-between items-baseline mb-2.5">
+        <label className="text-[10px] text-white/35 tracking-wide">{label}</label>
+        <span className="text-base font-light" style={{ color }}>{display}</span>
+      </div>
+      <input type="range" min={min} max={max} step={step} value={value}
+             onChange={e => onChange(parseFloat(e.target.value))}
+             className="w-full h-px appearance-none cursor-pointer"
+             style={{ accentColor: color, background: 'rgba(255,255,255,0.08)' }} />
+    </div>
+  )
+}
+
 export default function FormPanel({ params, setParams, onRun, isRunning, progress, summary }) {
-  const v = summary ? (VERDICT[summary.compliance_verdict] ?? VERDICT.MEDIUM_RISK) : null
+  const v   = summary ? (VERDICT[summary.compliance_verdict] ?? VERDICT.MEDIUM_RISK) : null
+  const cat = categoryOf(params.productType)
+  const set = patch => setParams(p => ({ ...p, ...patch }))
 
   return (
     <div className="glass rounded-2xl p-5 flex flex-col gap-5">
@@ -30,7 +68,10 @@ export default function FormPanel({ params, setParams, onRun, isRunning, progres
         <label className="block text-[10px] text-white/35 mb-2 tracking-wide">Product Type</label>
         <select
           value={params.productType}
-          onChange={e => setParams(p => ({ ...p, productType: e.target.value }))}
+          onChange={e => {
+            const pt = e.target.value
+            setParams(p => ({ ...p, productType: pt, ...seedDefaults(categoryOf(pt), p) }))
+          }}
           className="w-full rounded-xl px-3 py-2.5 text-xs text-white/80 cursor-pointer focus:outline-none transition"
           style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}
         >
@@ -40,27 +81,60 @@ export default function FormPanel({ params, setParams, onRun, isRunning, progres
         </select>
       </div>
 
-      {/* APR */}
-      <div>
-        <div className="flex justify-between items-baseline mb-2.5">
-          <label className="text-[10px] text-white/35 tracking-wide">Annual Percentage Rate</label>
-          <span className="text-base font-light text-[#4f9cf9]">{params.apr.toFixed(1)}%</span>
-        </div>
-        <input type="range" min="0" max="300" step="0.5" value={params.apr}
-               onChange={e => setParams(p => ({ ...p, apr: parseFloat(e.target.value) }))}
-               className="w-full h-px appearance-none cursor-pointer"
-               style={{ accentColor: '#4f9cf9', background: 'rgba(255,255,255,0.08)' }} />
-        <div className="flex justify-between text-[9px] text-white/15 mt-1.5">
-          <span>0%</span><span>300%</span>
-        </div>
-      </div>
+      {/* ── Cost / harm drivers — vary by product category ── */}
+      {cat === 'credit' && (
+        <Slider label="Annual Percentage Rate" value={params.apr ?? 39.9}
+                display={`${(params.apr ?? 39.9).toFixed(1)}%`} min={0} max={300} step={0.5}
+                color="#4f9cf9" onChange={apr => set({ apr })} />
+      )}
 
-      {/* Age group */}
+      {cat === 'insurance' && (
+        <>
+          <Slider label="Annual Premium" value={params.annualPremium ?? 600}
+                  display={`£${Math.round(params.annualPremium ?? 600)}`} min={0} max={2000} step={10}
+                  color="#4f9cf9" onChange={annualPremium => set({ annualPremium })} />
+          <Slider label="Claims Rejection Rate" value={params.claimsRejectionRate ?? 0.18}
+                  display={`${Math.round((params.claimsRejectionRate ?? 0.18) * 100)}%`} min={0} max={1} step={0.01}
+                  color="#fb923c" onChange={claimsRejectionRate => set({ claimsRejectionRate })} />
+          <Slider label="Exclusion Breadth" value={params.exclusionRatio ?? 0.40}
+                  display={`${Math.round((params.exclusionRatio ?? 0.40) * 100)}%`} min={0} max={1} step={0.01}
+                  color="#facc15" onChange={exclusionRatio => set({ exclusionRatio })} />
+        </>
+      )}
+
+      {cat === 'investment' && (
+        <>
+          <Slider label="Ongoing Annual Charge" value={params.annualFeePct ?? 1.5}
+                  display={`${(params.annualFeePct ?? 1.5).toFixed(2)}%`} min={0} max={5} step={0.05}
+                  color="#4f9cf9" onChange={annualFeePct => set({ annualFeePct })} />
+          <div>
+            <label className="block text-[10px] text-white/35 mb-2.5 tracking-wide">Risk Rating (SRRI 1–7)</label>
+            <div className="grid grid-cols-7 gap-1">
+              {[1, 2, 3, 4, 5, 6, 7].map(r => {
+                const active = (params.riskRating ?? 5) === r
+                return (
+                  <button key={r} onClick={() => set({ riskRating: r })}
+                          className="py-2 rounded-lg text-[11px] font-medium transition-all"
+                          style={{
+                            background: active ? 'rgba(79,156,249,0.2)' : 'rgba(255,255,255,0.04)',
+                            border: `1px solid ${active ? 'rgba(79,156,249,0.4)' : 'rgba(255,255,255,0.07)'}`,
+                            color: active ? '#4f9cf9' : 'rgba(255,255,255,0.35)',
+                          }}>
+                    {r}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Age group (shared) */}
       <div>
         <label className="block text-[10px] text-white/35 mb-2.5 tracking-wide">Target Age Group</label>
         <div className="grid grid-cols-4 gap-1.5">
           {AGE_GROUPS.map(ag => (
-            <button key={ag} onClick={() => setParams(p => ({ ...p, ageGroup: ag }))}
+            <button key={ag} onClick={() => set({ ageGroup: ag })}
                     className="py-2 rounded-lg text-[10px] font-medium transition-all"
                     style={{
                       background: params.ageGroup === ag ? 'rgba(79,156,249,0.2)' : 'rgba(255,255,255,0.04)',
@@ -73,22 +147,10 @@ export default function FormPanel({ params, setParams, onRun, isRunning, progres
         </div>
       </div>
 
-      {/* Vulnerable ratio */}
-      <div>
-        <div className="flex justify-between items-baseline mb-2.5">
-          <label className="text-[10px] text-white/35 tracking-wide">Vulnerable Population</label>
-          <span className="text-base font-light text-[#fb923c]">
-            {Math.round(params.vulnerableRatio * 100)}%
-          </span>
-        </div>
-        <input type="range" min="0" max="1" step="0.01" value={params.vulnerableRatio}
-               onChange={e => setParams(p => ({ ...p, vulnerableRatio: parseFloat(e.target.value) }))}
-               className="w-full h-px appearance-none cursor-pointer"
-               style={{ accentColor: '#fb923c', background: 'rgba(255,255,255,0.08)' }} />
-        <div className="flex justify-between text-[9px] text-white/15 mt-1.5">
-          <span>0%</span><span>100%</span>
-        </div>
-      </div>
+      {/* Vulnerable ratio (shared) */}
+      <Slider label="Vulnerable Population" value={params.vulnerableRatio}
+              display={`${Math.round(params.vulnerableRatio * 100)}%`} min={0} max={1} step={0.01}
+              color="#fb923c" onChange={vulnerableRatio => set({ vulnerableRatio })} />
 
       {/* Run button */}
       <button onClick={onRun} disabled={isRunning}

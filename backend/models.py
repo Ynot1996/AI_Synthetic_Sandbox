@@ -12,14 +12,57 @@ class ProductType(str, Enum):
     CREDIT_CARD      = "credit-card"
     PAYDAY           = "payday-loan"
     INVESTMENT       = "investment-product"
+    INSURANCE        = "insurance"
+
+
+# Product categories drive which parameters are meaningful for the simulation.
+CREDIT_PRODUCTS = {
+    ProductType.BNPL,
+    ProductType.HIGH_INTEREST,
+    ProductType.CREDIT_CARD,
+    ProductType.PAYDAY,
+}
+INSURANCE_PRODUCTS = {ProductType.INSURANCE}
+INVESTMENT_PRODUCTS = {ProductType.INVESTMENT}
+
+
+def product_category(pt: "ProductType | str") -> str:
+    """Return 'credit' | 'insurance' | 'investment' for a product type."""
+    pt = ProductType(pt) if not isinstance(pt, ProductType) else pt
+    if pt in INSURANCE_PRODUCTS:
+        return "insurance"
+    if pt in INVESTMENT_PRODUCTS:
+        return "investment"
+    return "credit"
 
 
 class SimulationRequest(BaseModel):
     product_type: ProductType
-    apr: float = Field(..., ge=0, le=500, description="Annual Percentage Rate (%)")
     target_age_group: str = Field(..., description="e.g. '18-25', '26-40', '41-60', '60+'")
     vulnerable_population_ratio: float = Field(..., ge=0.0, le=1.0)
     simulation_days: int = Field(default=90, ge=30, le=365)
+
+    # ── Credit products (BNPL / loans / credit cards) ──
+    apr: float = Field(default=0.0, ge=0, le=500, description="Annual Percentage Rate (%)")
+
+    # ── Insurance products ──
+    annual_premium: Optional[float] = Field(
+        default=None, ge=0, description="Annual premium in £"
+    )
+    claims_rejection_rate: Optional[float] = Field(
+        default=None, ge=0.0, le=1.0, description="Share of claims denied (0-1)"
+    )
+    exclusion_ratio: Optional[float] = Field(
+        default=None, ge=0.0, le=1.0, description="Breadth of policy exclusions (0-1)"
+    )
+
+    # ── Investment products ──
+    annual_fee_pct: Optional[float] = Field(
+        default=None, ge=0, le=20, description="Ongoing annual charge (%)"
+    )
+    risk_rating: Optional[int] = Field(
+        default=None, ge=1, le=7, description="SRRI-style risk rating 1 (low) – 7 (high)"
+    )
 
 
 # ─── Existing simulation output ───────────────────────────────────────────────

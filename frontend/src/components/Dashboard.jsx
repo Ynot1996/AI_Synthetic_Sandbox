@@ -1,12 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { runSimulation } from '../api/simulate'
-import FormPanel             from './FormPanel'
+import FormPanel, { categoryOf, CATEGORY_DEFAULTS } from './FormPanel'
 import ChartPanel            from './ChartPanel'
 import ConsumerDutyScorecard from './ConsumerDutyScorecard'
 import RecommendPanel        from './RecommendPanel'
 import TerminalLog           from './TerminalLog'
-
-const LOG_TRIGGER_DAYS = [14, 36, 67]
 
 const DEFAULT_PARAMS = {
   productType:     'buy-now-pay-later',
@@ -18,11 +16,42 @@ const DEFAULT_PARAMS = {
 export default function Dashboard({ presetParams }) {
   const [params, setParams] = useState(() => {
     if (!presetParams) return DEFAULT_PARAMS
+    // Map Stage-1 audit product_type → Stage-2 simulator product type
+    const AUDIT_TO_SIM = {
+      'bnpl':             'buy-now-pay-later',
+      'hcstc':            'payday-loan',
+      'credit_card':      'credit-card',
+      'mortgage':         'high-interest-loan',
+      'savings':          'investment-product',
+      'investment':       'investment-product',
+      'insurance':        'insurance',
+      'other':            'buy-now-pay-later',
+    }
+    const VALID_TYPES = ['buy-now-pay-later','high-interest-loan','credit-card','payday-loan','investment-product','insurance']
+    const rawType = presetParams.product_type ?? ''
+    const mapped  = AUDIT_TO_SIM[rawType] ?? rawType.replace(/_/g, '-')
+    const productType = VALID_TYPES.includes(mapped) ? mapped : DEFAULT_PARAMS.productType
+    const cat = categoryOf(productType)
+    const ins = cat === 'insurance', inv = cat === 'investment'
+
+    // Carry extracted product-specific params from the audited document;
+    // fall back to category defaults so the simulation reflects THIS product.
+    const annualPremium =
+      presetParams.annual_premium  != null ? presetParams.annual_premium
+      : presetParams.monthly_premium != null ? presetParams.monthly_premium * 12
+      : ins ? CATEGORY_DEFAULTS.insurance.annualPremium
+      : undefined
+
     return {
-      productType:     presetParams.product_type?.replace(/_/g, '-') ?? DEFAULT_PARAMS.productType,
-      apr:             presetParams.apr             ?? DEFAULT_PARAMS.apr,
+      productType,
       ageGroup:        presetParams.target_age_group ?? DEFAULT_PARAMS.ageGroup,
       vulnerableRatio: presetParams.vulnerable_population_ratio ?? DEFAULT_PARAMS.vulnerableRatio,
+      apr:                 presetParams.apr ?? CATEGORY_DEFAULTS.credit.apr,
+      annualPremium,
+      claimsRejectionRate: presetParams.claims_rejection_rate ?? (ins ? CATEGORY_DEFAULTS.insurance.claimsRejectionRate : undefined),
+      exclusionRatio:      presetParams.exclusion_ratio        ?? (ins ? CATEGORY_DEFAULTS.insurance.exclusionRatio      : undefined),
+      annualFeePct:        presetParams.annual_fee_pct         ?? (inv ? CATEGORY_DEFAULTS.investment.annualFeePct       : undefined),
+      riskRating:          presetParams.risk_rating            ?? (inv ? CATEGORY_DEFAULTS.investment.riskRating         : undefined),
     }
   })
 
@@ -60,36 +89,29 @@ export default function Dashboard({ presetParams }) {
       const data = await runSimulation(params)
       setFullData(data)
 
-      let pt = 0, logIdx = 0
-      intervalRef.current = setInterval(() => {
-        pt = Math.min(pt + 2, 90)
-        setVisiblePts(pt)
-        setProgress(Math.round((pt / 90) * 100))
+      // Reveal the full result in one commit, then stagger the panels with a
+      // handful of timeouts. (The previous 60 ms setInterval re-rendered the
+      // whole dashboard ~16×/s and could saturate the main thread / hard-freeze
+      // the tab; a single-pass reveal is smoother and safe.)
+      setVisiblePts(90)
+      setProgress(100)
+      setTermLogs(data.logs ?? [])
+      setIsRunning(false)
+      setSummary(data.summary)
 
-        while (logIdx < (data.logs?.length ?? 0) && LOG_TRIGGER_DAYS[logIdx] <= pt) {
-          setTermLogs(prev => [...prev, data.logs[logIdx++]])
+      const t1 = setTimeout(() => setScorecard(data.scorecard), 250)
+      const t2 = setTimeout(() => setRecommendations(data.recommendations), 600)
+      const t3 = setTimeout(() => {
+        if (data.debateMessages?.length) {
+          setIsDebateMode(true)
+          setDebateMessages([])
+          data.debateMessages.forEach((msg, idx) => {
+            const t = setTimeout(() => setDebateMessages(prev => [...prev, msg]), idx * 600)
+            timeoutsRef.current.push(t)
+          })
         }
-
-        if (pt >= 90) {
-          clearInterval(intervalRef.current)
-          setIsRunning(false)
-          setSummary(data.summary)
-
-          const t1 = setTimeout(() => setScorecard(data.scorecard), 300)
-          const t2 = setTimeout(() => setRecommendations(data.recommendations), 800)
-          const t3 = setTimeout(() => {
-            if (data.debateMessages?.length) {
-              setDebateMessages([]); setIsDebateMode(true)
-              data.debateMessages.forEach((msg, idx) => {
-                const t = setTimeout(() => setDebateMessages(prev => [...prev, msg]), idx * 700)
-                timeoutsRef.current.push(t)
-              })
-            }
-          }, 1200)
-
-          timeoutsRef.current.push(t1, t2, t3)
-        }
-      }, 60)
+      }, 1000)
+      timeoutsRef.current.push(t1, t2, t3)
     } catch (err) {
       console.error('Stage 2 simulation failed:', err)
       setError('Simulation failed. Check browser console or backend status.')
