@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react'
 
-export default function UploadPage({ onUpload, errorMsg }) {
+export default function UploadPage({ onUpload, errorMsg, onBack }) {
   const [dragging, setDragging] = useState(false)
   const [file, setFile]         = useState(null)
   const [error, setError]       = useState(errorMsg || '')
@@ -23,8 +23,18 @@ export default function UploadPage({ onUpload, errorMsg }) {
   const handleAnalyse = () => { if (file) onUpload(file) }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center px-4"
+    <div className="min-h-screen flex flex-col items-center justify-center px-4 relative"
          style={{ background: '#08090a' }}>
+
+      {onBack && (
+        <button onClick={onBack}
+                className="absolute top-6 left-6 flex items-center gap-1.5 text-xs text-white/30 hover:text-white/60 transition-colors">
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+          Home
+        </button>
+      )}
 
       {/* Header */}
       <div className="mb-12 text-center animate-fadeUp">

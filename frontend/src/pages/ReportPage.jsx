@@ -131,12 +131,20 @@ export default function ReportPage({ result, onReset }) {
             <button
               onClick={async () => {
                 try {
-                  const res = await fetch('http://localhost:8000/api/report', {
+                  const res = await fetch('/api/report', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(result),
                   })
+                  // Guard against saving an error body as a .pdf (unviewable file)
+                  if (!res.ok) {
+                    const err = await res.json().catch(() => ({ detail: res.statusText }))
+                    throw new Error(err.detail || `Server returned ${res.status}`)
+                  }
                   const blob = await res.blob()
+                  if (blob.type !== 'application/pdf') {
+                    throw new Error('Server did not return a PDF.')
+                  }
                   const url  = URL.createObjectURL(blob)
                   const a    = document.createElement('a')
                   a.href = url

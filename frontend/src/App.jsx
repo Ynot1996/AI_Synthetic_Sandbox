@@ -1,13 +1,18 @@
 import { useState } from 'react'
+import HomePage     from './pages/HomePage'
 import UploadPage   from './pages/UploadPage'
 import AnalysisPage from './pages/AnalysisPage'
 import ReportPage   from './pages/ReportPage'
 
 export default function App() {
-  const [page,   setPage]   = useState('upload')  // upload | analysis | report
+  const [page,   setPage]   = useState('home')  // home | upload | analysis | report
   const [file,   setFile]   = useState(null)
   const [result, setResult] = useState(null)
   const [error,  setError]  = useState('')
+
+  const handleStart = () => {
+    setError(''); setPage('upload')
+  }
 
   const handleUpload = f => {
     setFile(f); setError(''); setResult(null); setPage('analysis')
@@ -22,14 +27,17 @@ export default function App() {
   }
 
   const handleReset = () => {
-    setFile(null); setResult(null); setError(''); setPage('upload')
+    setFile(null); setResult(null); setError(''); setPage('home')
   }
 
+  if (page === 'upload') return (
+    <UploadPage onUpload={handleUpload} errorMsg={error} onBack={() => setPage('home')} />
+  )
   if (page === 'analysis') return (
     <AnalysisPage file={file} onComplete={handleComplete} onError={handleError} />
   )
   if (page === 'report') return (
     <ReportPage result={result} onReset={handleReset} />
   )
-  return <UploadPage onUpload={handleUpload} errorMsg={error} />
+  return <HomePage onStart={handleStart} />
 }

@@ -7,6 +7,30 @@ import io
 from datetime import datetime
 from fpdf import FPDF
 
+# fpdf2's core fonts (Helvetica) only support latin-1. Gemini's audit text is
+# full of typographic Unicode (em-dashes, curly quotes, arrows, ellipses) which
+# would raise an encoding error and produce a corrupt download. Map the common
+# offenders to ASCII, then drop anything still outside latin-1 as a safety net.
+_CHAR_MAP = {
+    "—": "-",  "–": "-",   "−": "-",          # em/en dash, minus
+    "‘": "'",  "’": "'",   "′": "'",          # curly single quotes, prime
+    "“": '"',  "”": '"',   "″": '"',          # curly double quotes
+    "…": "...", "•": "-",  "·": "-",          # ellipsis, bullets
+    "→": "->", "←": "<-",  "↑": "^", "↓": "v",
+    " ": " ",  " ": " ",   " ": " ", "​": "",
+    "€": "EUR",
+}
+
+
+def _s(text) -> str:
+    if text is None:
+        return ""
+    text = str(text)
+    for k, v in _CHAR_MAP.items():
+        text = text.replace(k, v)
+    return text.encode("latin-1", "replace").decode("latin-1")
+
+
 SEV_COLOR = {
     "CRITICAL": (239, 68, 68),
     "HIGH":     (249, 115, 22),
@@ -46,19 +70,22 @@ class RegTechPDF(FPDF):
     def section_title(self, text):
         self.set_font("Helvetica", "B", 7)
         self.set_text_color(*DIM)
-        self.cell(0, 5, text.upper(), ln=True)
+        self.cell(0, 5, _s(text).upper(), ln=True)
         self.set_draw_color(*BLUE)
         self.set_line_width(0.3)
         self.line(self.get_x(), self.get_y(), self.get_x() + 190, self.get_y())
         self.ln(3)
 
     def kv_row(self, key, value, value_color=None):
+        self.set_x(self.l_margin)
         self.set_font("Helvetica", "", 8)
         self.set_text_color(*DIM)
-        self.cell(55, 6, key)
+        self.cell(55, 6, _s(key))
         self.set_text_color(*(value_color or TEXT))
         self.set_font("Helvetica", "B", 8)
-        self.multi_cell(0, 6, str(value))
+        # new_x=LMARGIN / new_y=NEXT keeps the cursor from drifting to the right
+        # margin, which would push the following row off-page.
+        self.multi_cell(0, 6, _s(value), new_x="LMARGIN", new_y="NEXT")
 
     def score_bar(self, label, rule, score):
         color = TEAL if score >= 70 else ((234, 179, 8) if score >= 45 else (239, 68, 68))
@@ -113,16 +140,16 @@ def generate_audit_pdf(audit_result: dict) -> bytes:
     pdf.set_xy(14, 33)
     pdf.set_font("Helvetica", "", 8)
     pdf.set_text_color(*DIM)
-    pdf.cell(0, 5,
-             f"Product: {audit_result.get('product_type','').replace('_',' ').upper()}  ·  "
-             f"Audit ID: {audit_result.get('audit_id','')}  ·  "
-             f"Risk Level: {audit_result.get('overall_risk','')}")
+    pdf.cell(0, 5, _s(
+             f"Product: {audit_result.get('product_type','').replace('_',' ').upper()}  -  "
+             f"Audit ID: {audit_result.get('audit_id','')}  -  "
+             f"Risk Level: {audit_result.get('overall_risk','')}"))
 
     pdf.set_xy(14, 42)
     pdf.set_font("Helvetica", "", 8)
     pdf.set_text_color(*TEXT)
     summary = audit_result.get("summary", "")
-    pdf.multi_cell(182, 5, summary)
+    pdf.multi_cell(182, 5, _s(summary))
 
     pdf.ln(6)
 
@@ -184,14 +211,14 @@ def generate_audit_pdf(audit_result: dict) -> bytes:
             # FCA rule ref
             pdf.set_text_color(*DIM)
             pdf.set_font("Helvetica", "", 7)
-            pdf.cell(0, 6, f"  {clause.get('fca_rule','')}")
+            pdf.cell(0, 6, _s(f"  {clause.get('fca_rule','')}"))
             pdf.ln(7)
 
             # Clause text
             pdf.set_font("Helvetica", "I", 8)
             pdf.set_text_color(*DIM)
             pdf.set_x(14)
-            pdf.multi_cell(182, 4.5, f'"{clause.get("clause_text","")}"')
+            pdf.multi_cell(182, 4.5, _s(f'"{clause.get("clause_text","")}"'))
             pdf.ln(1)
 
             # Issue
@@ -203,7 +230,7 @@ def generate_audit_pdf(audit_result: dict) -> bytes:
             pdf.set_font("Helvetica", "", 7.5)
             pdf.set_text_color(180, 180, 190)
             pdf.set_x(14)
-            pdf.multi_cell(182, 4.5, clause.get("issue", ""))
+            pdf.multi_cell(182, 4.5, _s(clause.get("issue", "")))
             pdf.ln(1)
 
             # Suggested revision
@@ -215,7 +242,7 @@ def generate_audit_pdf(audit_result: dict) -> bytes:
             pdf.set_font("Helvetica", "", 7.5)
             pdf.set_text_color(0, 180, 145)
             pdf.set_x(14)
-            pdf.multi_cell(182, 4.5, clause.get("suggested_revision", ""))
+            pdf.multi_cell(182, 4.5, _s(clause.get("suggested_revision", "")))
             pdf.ln(5)
 
     # ── Regulatory References ─────────────────────────────────────────────────
@@ -230,9 +257,9 @@ def generate_audit_pdf(audit_result: dict) -> bytes:
     for code, desc in refs:
         pdf.set_font("Helvetica", "B", 7.5)
         pdf.set_text_color(*BLUE)
-        pdf.cell(22, 5, code)
+        pdf.cell(22, 5, _s(code))
         pdf.set_font("Helvetica", "", 7.5)
         pdf.set_text_color(*DIM)
-        pdf.cell(0, 5, desc, ln=True)
+        pdf.cell(0, 5, _s(desc), ln=True)
 
     return bytes(pdf.output())
